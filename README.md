@@ -14,12 +14,8 @@ FastAPI로 만든 OpenAI 호환 API 래퍼입니다. 로컬의 Ollama 서버에 
 
 ## 사전 준비
 - Python 3.12+
-- [Ollama](https://ollama.com) 설치 및 실행 (예: 포트 `11434`)
-- 사용 모델 풀(Pull) 예시: `gpt-oss:20b` (모델명은 환경 변수로 변경 가능)
-
-```bash
-ollama run gpt-oss:20b   # 또는 미리 pull: ollama pull gpt-oss:20b
-```
+- Docker 및 Docker Compose
+- Compose 사용 시 별도 Ollama 설치는 필요 없습니다. 외부 Ollama를 사용할 경우에만 호스트에 설치하세요.
 
 ---
 
@@ -40,6 +36,7 @@ OLLAMA_MODEL=gpt-oss:20b
 - `OLLAMA_BASE_URL`: OpenAI 호환 Ollama 엔드포인트
   - 로컬 직접 실행: `http://localhost:11434/v1`
   - Docker 컨테이너에서 호스트로 접속: `http://host.docker.internal:11434/v1`
+  - Docker Compose 내부 Ollama 서비스 사용: `http://ollama:11434/v1`
 - `OLLAMA_API_KEY`: OpenAI SDK가 요구하는 토큰 값(임의 문자열 OK, 기본 `ollama`)
 - `OLLAMA_MODEL`: 기본 모델명 (예: `gpt-oss:20b`)
 
@@ -60,7 +57,34 @@ curl -H 'x-api-key: your-secret-key' http://localhost:8000/health
 
 ---
 
-## Docker로 실행
+## Docker Compose로 실행 (권장)
+
+1) 프로젝트 루트에 `.env` 준비 (예시)
+```
+APP_API_KEY=your-secret-key
+API_KEY_HEADER_NAME=x-api-key
+OLLAMA_API_KEY=ollama
+OLLAMA_MODEL=gpt-oss:20b
+OLLAMA_BASE_URL=http://ollama:11434/v1
+```
+
+2) Compose 빌드 및 실행
+```bash
+docker compose up -d --build
+```
+
+3) 확인
+```bash
+curl -H 'x-api-key: your-secret-key' http://localhost:8000/health
+```
+
+참고:
+- `docker-compose.yml`은 호스트의 `${HOME}/.ollama`를 `ollama` 컨테이너의 `/root/.ollama`에 바인드하여 모델을 재사용합니다. Windows/PowerShell 환경에서는 `${HOME}` 대신 절대 경로로 바꿔주세요.
+- API 컨테이너에는 프로젝트의 `.env`가 `/app/.env`로 읽기전용 마운트됩니다. Compose에서 별도 환경변수를 주입하지 않습니다.
+
+---
+
+## Docker로 단독 실행
 
 이미지 빌드:
 ```bash
@@ -143,6 +167,11 @@ curl -X POST 'http://localhost:8000/chat' \
 
 3) PDF 분석 (`POST /analyze-pdf`)
 파일 업로드(FormData) + 쿼리 파라미터
+
+4) 스트리밍 엔드포인트
+- `POST /chat-stream`: chunked 텍스트(`text/plain`)로 응답 스트림
+- `POST /analyze-pdf-stream`: 업로드한 PDF 분석 결과를 스트리밍으로 반환
+
 ```bash
 curl -X POST 'http://localhost:8000/analyze-pdf?model=gpt-oss:20b' \
   -H 'x-api-key: your-secret-key' \
