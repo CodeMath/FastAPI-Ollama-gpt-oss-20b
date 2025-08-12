@@ -29,20 +29,7 @@ def create_ollama_client() -> OpenAI:
 def generate_chat_response(messages: List[dict], model: str, temperature: Optional[float]) -> str:
     """Single-shot chat completion; returns content string."""
     client = create_ollama_client()
-    # Prefer Responses API (OpenAI Quickstart). Fallback to Chat Completions if unsupported.
-    try:  # Try unified Responses API
-        response = client.responses.create(
-            model=model,
-            input=messages,
-            temperature=temperature,
-        )
-        output_text = getattr(response, "output_text", None)
-        if output_text:
-            return output_text
-    except Exception:  # noqa: BLE001
-        pass
-
-    # Fallback: OpenAI-compatible Chat Completions
+    # Use OpenAI-compatible Chat Completions for Ollama for maximum compatibility
     response = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -54,25 +41,7 @@ def generate_chat_response(messages: List[dict], model: str, temperature: Option
 def stream_chat_chunks(messages: List[dict], model: str, temperature: Optional[float]):
     """Yield content chunks as they arrive."""
     client = create_ollama_client()
-
-    # Prefer Responses streaming (OpenAI Quickstart). If unsupported, fallback to Chat Completions streaming.
-    try:
-        with client.responses.stream(
-            model=model,
-            input=messages,
-            temperature=temperature,
-        ) as stream:
-            for event in stream:
-                # Stream only text deltas for simplicity
-                if getattr(event, "type", None) == "response.output_text.delta":
-                    delta_text = getattr(event, "delta", None)
-                    if delta_text:
-                        yield delta_text
-            return
-    except Exception:  # noqa: BLE001
-        pass
-
-    # Fallback to Chat Completions streaming
+    # Stream via OpenAI-compatible Chat Completions for Ollama
     stream = client.chat.completions.create(
         model=model,
         messages=messages,
