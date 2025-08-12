@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    # Reuse your locally stored models by bind-mounting the host store
+    volumes:
+      - ${OLLAMA_HOST_MODELS_DIR:-~/.ollama}:/root/.ollama
+    restart: unless-stopped
+
+  api:
+    build: .
+    container_name: oss20b-api
+    depends_on:
+      - ollama
+    environment:
+      # App auth
+      - APP_API_KEY=${APP_API_KEY}
+      - API_KEY_HEADER_NAME=${API_KEY_HEADER_NAME:-x-api-key}
+      # Point SDK to the Ollama service inside the compose network
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gpt-oss:20b}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped

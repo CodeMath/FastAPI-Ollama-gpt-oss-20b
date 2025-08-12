@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi import Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from openai import OpenAI
 from PyPDF2 import PdfReader
 from pydantic import BaseModel
@@ -24,6 +24,68 @@ DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
 
 def create_ollama_client() -> OpenAI:
     return OpenAI(base_url=OLLAMA_BASE_URL, api_key=OLLAMA_API_KEY)
+
+
+def generate_chat_response(messages: List[dict], model: str, temperature: Optional[float]) -> str:
+    """Single-shot chat completion; returns content string."""
+    client = create_ollama_client()
+    # Prefer Responses API (OpenAI Quickstart). Fallback to Chat Completions if unsupported.
+    try:  # Try unified Responses API
+        response = client.responses.create(
+            model=model,
+            input=messages,
+            temperature=temperature,
+        )
+        output_text = getattr(response, "output_text", None)
+        if output_text:
+            return output_text
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Fallback: OpenAI-compatible Chat Completions
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+    )
+    return response.choices[0].message.content  # type: ignore[return-value]
+
+
+def stream_chat_chunks(messages: List[dict], model: str, temperature: Optional[float]):
+    """Yield content chunks as they arrive."""
+    client = create_ollama_client()
+
+    # Prefer Responses streaming (OpenAI Quickstart). If unsupported, fallback to Chat Completions streaming.
+    try:
+        with client.responses.stream(
+            model=model,
+            input=messages,
+            temperature=temperature,
+        ) as stream:
+            for event in stream:
+                # Stream only text deltas for simplicity
+                if getattr(event, "type", None) == "response.output_text.delta":
+                    delta_text = getattr(event, "delta", None)
+                    if delta_text:
+                        yield delta_text
+            return
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Fallback to Chat Completions streaming
+    stream = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        stream=True,
+    )
+    for chunk in stream:
+        try:
+            delta = chunk.choices[0].delta
+            if delta and getattr(delta, "content", None):
+                yield delta.content
+        except Exception:  # noqa: BLE001
+            continue
 
 
 # ---------- 인증 ----------
@@ -61,15 +123,22 @@ async def health() -> JSONResponse:
 
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(verify_api_key)])
 async def chat(request: ChatRequest) -> ChatResponse:
-    client = create_ollama_client()
     model = request.model or DEFAULT_MODEL
-    response = client.chat.completions.create(
-        model=model,
-        messages=[m.model_dump() for m in request.messages],
-        temperature=request.temperature,
-    )
-    content = response.choices[0].message.content
+    messages = [m.model_dump() for m in request.messages]
+    content = generate_chat_response(messages=messages, model=model, temperature=request.temperature)
     return ChatResponse(content=content, model=model)
+
+
+@app.post("/chat-stream", dependencies=[Depends(verify_api_key)])
+async def chat_stream(request: ChatRequest) -> StreamingResponse:
+    model = request.model or DEFAULT_MODEL
+    messages = [m.model_dump() for m in request.messages]
+
+    def generate():
+        for piece in stream_chat_chunks(messages=messages, model=model, temperature=request.temperature):
+            yield piece
+
+    return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/analyze-pdf", response_model=ChatResponse, dependencies=[Depends(verify_api_key)])
@@ -86,16 +155,37 @@ async def analyze_pdf(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Invalid PDF: {exc}")
 
-    client = create_ollama_client()
     actual_model = model or DEFAULT_MODEL
-    response = client.chat.completions.create(
-        model=actual_model,
-        messages=[
+    messages = [
+        {"role": "system", "content": system_prompt or ""},
+        {"role": "user", "content": text},
+    ]
+    content = generate_chat_response(messages=messages, model=actual_model, temperature=temperature)
+    return ChatResponse(content=content, model=actual_model)
+
+
+@app.post("/analyze-pdf-stream", dependencies=[Depends(verify_api_key)])
+async def analyze_pdf_stream(
+    file: UploadFile = File(...),
+    model: Optional[str] = None,
+    system_prompt: Optional[str] = "너는 대본을 분석하는 연출자야. 주인공의 감정선을 분석해줘.",
+    temperature: Optional[float] = 0.2,
+) -> StreamingResponse:
+    try:
+        reader = PdfReader(file.file)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid PDF: {exc}")
+
+    actual_model = model or DEFAULT_MODEL
+
+    def generate():
+        messages = [
             {"role": "system", "content": system_prompt or ""},
             {"role": "user", "content": text},
-        ],
-        temperature=temperature,
-    )
-    content = response.choices[0].message.content
-    return ChatResponse(content=content, model=actual_model)
+        ]
+        for piece in stream_chat_chunks(messages=messages, model=actual_model, temperature=temperature):
+            yield piece
+
+    return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
 
