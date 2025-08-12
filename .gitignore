@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+*.dylib
+
+# Builds / packaging
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+.python-version
+
+# Environment files (do not commit secrets)
+.env
+.env.*
+!.env.example
+
+# Tests / coverage
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Type-check / linters / tooling caches
+.mypy_cache/
+.pytype/
+.ruff_cache/
+
+# Logs & temp
+logs/
+*.log
+*.tmp
+*.swp
+*.bak
+
+# Editors / OS
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid
+
+# uv
+# Keep uv.lock tracked for reproducible builds

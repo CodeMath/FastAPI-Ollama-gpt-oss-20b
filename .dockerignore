@@ -1,0 +1,38 @@
+# Exclude Git metadata
+.git/
+.gitignore
+
+# Python caches and build artifacts
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment files (never send to build context)
+.env
+.env.*
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs & temp
+logs/
+*.log
+*.tmp
+*.swp
+*.bak
+
+# Local files not needed in image
+README.md
