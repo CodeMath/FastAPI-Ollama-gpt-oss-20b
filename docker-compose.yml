@@ -6,9 +6,10 @@ services:
     container_name: ollama
     ports:
       - "11434:11434"
-    # Reuse your locally stored models by bind-mounting the host store
+    # Reuse host's local Ollama model store so models persist and are shared
+    # Note: ${HOME} must be available in your shell; on Windows, replace with absolute path
     volumes:
-      - ${OLLAMA_HOST_MODELS_DIR:-~/.ollama}:/root/.ollama
+      - ${HOME}/.ollama:/root/.ollama
     restart: unless-stopped
 
   api:
@@ -16,14 +17,14 @@ services:
     container_name: oss20b-api
     depends_on:
       - ollama
-    environment:
-      # App auth
-      - APP_API_KEY=${APP_API_KEY}
-      - API_KEY_HEADER_NAME=${API_KEY_HEADER_NAME:-x-api-key}
-      # Point SDK to the Ollama service inside the compose network
-      - OLLAMA_BASE_URL=http://ollama:11434/v1
-      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gpt-oss:20b}
+    # The app loads config from /app/.env itself
+    environment: {}
+    volumes:
+      # Provide project .env to the container without exporting via compose
+      - ./.env:/app/.env:ro
+    # Point SDK to the Ollama service inside the compose network via app .env:
+    # Ensure your project .env contains: OLLAMA_BASE_URL=http://ollama:11434/v1
     ports:
       - "8000:8000"
     restart: unless-stopped
+
